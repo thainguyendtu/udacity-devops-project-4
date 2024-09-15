@@ -1,16 +1,20 @@
 # This is a basic workflow that is manually triggered
 
-name: Backend Continuous Integration
+name: Backend Continuous Deployment
 
 # Controls when the workflow will run
 on:
   # Triggers the workflow on push or pull request events but only for the "main" branch
-  pull_request:
+  push:
     branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
   
 env:
   PYTHON_VERSION: 3.12.1
   IMAGE_REPO_NAME: backend
+  IMAGE_TAG: latest
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   lint:
@@ -73,7 +77,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        
-      - name: Docker Build
+  
+      - name: Configure AWS Credentials for Deployment
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login AWS
+        uses: aws-actions/amazon-ecr-login@v2
+        with: 
+          aws-access-key-id: ${{ secrets.ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Build and Push Docker Image
         run: |
-          docker build -t ${{env.IMAGE_REPO_NAME}}:latest .
+          aws eks update-kubeconfig --name cluster --region us-east-1
+          kubectl get svc
+          docker build -t ${{env.IMAGE_REPO_NAME}} .
+          docker tag ${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}} 023184877235.dkr.ecr.us-east-1.amazonaws.com/${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}}
+          docker push 023184877235.dkr.ecr.us-east-1.amazonaws.com/${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}}
+  
+      - name: Deploy to AWS EKS
+        run: |
+          aws eks update-kubeconfig --name cluster --region us-east-1
+          cd k8s
+          kustomize edit set image backend=023184877235.dkr.ecr.us-east-1.amazonaws.com/${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}}
+          kustomize build | kubectl apply -f -
