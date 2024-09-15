@@ -1,3 +1,6 @@
+Link demo BE: http://a87f05002ce5e406bbf67c93080dd6eb-615289597.us-east-1.elb.amazonaws.com/movies <br>
+Link demo FE: http://a13c383159aa24a9b9b48fdeeac84b86-1546753792.us-east-1.elb.amazonaws.com/ <br>
+
 # Movie Picture Pipeline
 
 You've been brought on as the DevOps resource for a development team that manages a web application that is a catalog of Movie Picture movies. They're in dire need of automating their development workflows in hopes of accelerating their release cycle. They'd like to use Github Actions to automate testing, building and deploying their applications to an existing Kubernetes cluster.
