@@ -1,0 +1,123 @@
+# This is a basic workflow that is manually triggered
+
+name: Frontend Continuous Deployment
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+  
+# Environment
+env:
+  NODE_VERSION: 18.18.0
+  IMAGE_REPO_NAME: frontend
+  IMAGE_TAG: latest
+  
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  lint:
+    name: LINT JOB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{env.NODE_VERSION}}
+          
+      - name: Perform a cache action to restore cache before dependency install
+        id: cache-npm
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: npm-cache-${{ hashFiles('**/package-lock.json') }}
+          
+      - name: Install dependencies
+        run: |
+           npm ci
+           npm install eslint --save-dev
+
+      - name: Run lint
+        run: |
+          npm run lint
+          
+  test:
+    name: TEST JOB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{env.NODE_VERSION}}
+      
+      - name: Perform a cache action to restore cache before dependency install
+        id: cache-npm-test
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: npm-cache-${{ hashFiles('**/package-lock.json') }}
+  
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install prettier --save-dev
+  
+      - name: Run test
+        run: npm run test
+        
+  deploy:
+    name: Deploy AWS
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+  
+      - name: Configure AWS Credentials for Deployment
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login AWS
+        uses: aws-actions/amazon-ecr-login@v2
+        with: 
+          aws-access-key-id: ${{ secrets.ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Build and Push Docker Image
+        run: |
+          aws eks update-kubeconfig --name cluster --region us-east-1
+          kubectl get svc
+          export EXTERNALIP=$(kubectl get svc backend -o=jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}')
+          echo "EXTERNALIP=$EXTERNALIP"
+          docker build --build-arg REACT_APP_MOVIE_API_URL=http://$EXTERNALIP -t ${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}} .
+          docker tag ${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}} 023184877235.dkr.ecr.us-east-1.amazonaws.com/${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}}
+          docker push 023184877235.dkr.ecr.us-east-1.amazonaws.com/${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}}
+  
+      - name: Deploy to AWS EKS
+        run: |
+          aws eks update-kubeconfig --name cluster --region us-east-1
+          cd k8s
+          kustomize edit set image frontend=023184877235.dkr.ecr.us-east-1.amazonaws.com/${{env.IMAGE_REPO_NAME}}:${{env.IMAGE_TAG}}
+          kustomize build | kubectl apply -f -
