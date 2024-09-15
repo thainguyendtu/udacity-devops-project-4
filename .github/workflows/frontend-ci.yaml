@@ -1,0 +1,93 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Frontend Continuous Integration
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  pull_request:
+    branches: [ "main" ]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+# Environment
+env:
+  NODE_VERSION: 18.18.0
+  IMAGE_REPO_NAME: frontend
+  
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  lint:
+    name: LINT JOB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{env.NODE_VERSION}}
+          
+      - name: Perform a cache action to restore cache before dependency install
+        id: cache-npm
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: npm-cache-${{ hashFiles('**/package-lock.json') }}
+          
+      - name: Install dependencies
+        run: |
+           npm ci
+           npm install eslint --save-dev
+
+      - name: Run lint
+        run: |
+          npm run lint
+          
+  test:
+    name: TEST JOB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{env.NODE_VERSION}}
+      
+      - name: Perform a cache action to restore cache before dependency install
+        id: cache-npm-test
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: npm-cache-${{ hashFiles('**/package-lock.json') }}
+  
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install prettier --save-dev
+  
+      - name: Run test
+        run: npm run test
+
+  build:
+    name: BUILD JOB
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Docker Build
+        run: |
+          docker build -t ${{env.IMAGE_REPO_NAME}}:latest .
